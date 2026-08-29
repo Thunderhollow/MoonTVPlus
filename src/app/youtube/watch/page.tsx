@@ -1,6 +1,6 @@
 'use client';
 import { ExternalLink, Loader2, MessageCircle, ThumbsUp } from 'lucide-react';
-import { useRouter,useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 import type { YouTubeComment, YouTubeVideo } from '@/lib/youtube';
@@ -24,8 +24,10 @@ function WatchContent() {
   const [next, setNext] = useState('');
   const [loading, setLoading] = useState(true);
   const [commentError, setCommentError] = useState('');
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   useEffect(() => {
     if (!id) return;
+    setDescriptionExpanded(false);
     setLoading(true);
     Promise.all([
       fetch(`/api/youtube/video?id=${encodeURIComponent(id)}`).then((r) =>
@@ -118,7 +120,18 @@ function WatchContent() {
           <p className='mb-2 font-medium'>
             {new Date(video.publishedAt).toLocaleDateString()}
           </p>
-          {video.description || '没有视频简介'}
+          <div className={descriptionExpanded ? '' : 'line-clamp-4'}>
+            {video.description || '没有视频简介'}
+          </div>
+          {video.description && (
+            <button
+              type='button'
+              onClick={() => setDescriptionExpanded((value) => !value)}
+              className='mt-3 font-semibold text-gray-700 hover:text-green-600 dark:text-gray-200'
+            >
+              {descriptionExpanded ? '收起' : '展开更多'}
+            </button>
+          )}
         </div>
         <section className='mt-7'>
           <h2 className='mb-5 flex items-center gap-2 text-lg font-bold dark:text-white'>
