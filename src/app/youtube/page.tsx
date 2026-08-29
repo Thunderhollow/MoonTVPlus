@@ -14,6 +14,16 @@ interface SavedChannel {
   title: string;
   url: string;
 }
+async function syncChannels(channels?: SavedChannel[]) {
+  const response = await fetch('/api/youtube/subscriptions', {
+    method: channels ? 'PUT' : 'GET',
+    headers: channels ? { 'Content-Type': 'application/json' } : undefined,
+    body: channels ? JSON.stringify({ channels }) : undefined,
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || '频道同步失败');
+  return (result.channels || []) as SavedChannel[];
+}
 async function requestChannel(input: string, pageToken = '') {
   const r = await fetch(
     `/api/youtube/channel?input=${encodeURIComponent(input)}${
@@ -70,20 +80,39 @@ export default function YouTubePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<Tab>('all');
+  const [syncWarning, setSyncWarning] = useState('');
   useEffect(() => {
+    let localChannels: SavedChannel[] = [];
     try {
       const x = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
       if (Array.isArray(x)) {
-        setChannels(x);
-        setActiveId(x[0]?.id || '');
+        localChannels = x;
       }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
+    void syncChannels()
+      .then(async (remoteChannels) => {
+        const resolved =
+          remoteChannels.length === 0 && localChannels.length > 0
+            ? await syncChannels(localChannels)
+            : remoteChannels;
+        setChannels(resolved);
+        setActiveId(resolved[0]?.id || '');
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(resolved));
+      })
+      .catch(() => {
+        setChannels(localChannels);
+        setActiveId(localChannels[0]?.id || '');
+        setSyncWarning('云端同步暂时不可用，目前仅保存在此设备');
+      });
   }, []);
   const save = (x: SavedChannel[]) => {
     setChannels(x);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(x));
+    void syncChannels(x)
+      .then(() => setSyncWarning(''))
+      .catch(() => setSyncWarning('云端同步失败，变更目前仅保存在此设备'));
   };
   const load = useCallback(
     async (id: string, more = false) => {
@@ -166,6 +195,11 @@ export default function YouTubePage() {
         {error && (
           <div className='mb-5 rounded-xl bg-red-50 p-3 text-red-700 dark:bg-red-950 dark:text-red-300'>
             {error}
+          </div>
+        )}
+        {syncWarning && (
+          <div className='mb-5 rounded-xl bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200'>
+            {syncWarning}
           </div>
         )}
         <div className='mb-6 flex gap-2 overflow-x-auto'>
