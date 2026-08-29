@@ -2,11 +2,28 @@
 
 'use client';
 
-import { Blend, Cat, Clover, Container, Film, Globe, Home, Star, Tv, TvMinimalPlay, Users, Youtube } from 'lucide-react';
+import {
+  Blend,
+  Cat,
+  Clover,
+  Container,
+  Film,
+  Globe,
+  Home,
+  Star,
+  Tv,
+  TvMinimalPlay,
+  Users,
+  Youtube,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import {
+  NavigationCustomizer,
+  useVisibleNavigationItems,
+} from './NavigationCustomizer';
 import { useWatchRoomContextSafe } from './WatchRoomProvider';
 
 interface MobileBottomNavProps {
@@ -28,9 +45,6 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   };
   const currentActive = activePath ?? getCurrentFullPath();
 
-  if (pathname === '/watch-room/screen') {
-    return null;
-  }
 
   const [navItems, setNavItems] = useState([
     { icon: Home, label: '首页', href: '/' },
@@ -54,12 +68,13 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
       label: '综艺',
       href: '/douban?type=show',
     },
-      {
-        icon: TvMinimalPlay,
-        label: '电视直播',
-        href: '/live',
-      },
+    {
+      icon: TvMinimalPlay,
+      label: '电视直播',
+      href: '/live',
+    },
   ]);
+  const visibleNavItems = useVisibleNavigationItems(navItems);
 
   useEffect(() => {
     const runtimeConfig = (window as any).RUNTIME_CONFIG;
@@ -102,7 +117,6 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
         href: '/youtube',
       },
     ];
-
 
     // 如果启用网络直播，添加网络直播入口
     if (runtimeConfig?.WEB_LIVE_ENABLED) {
@@ -165,6 +179,8 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
     );
   };
 
+  if (pathname === '/watch-room/screen') return null;
+
   return (
     <nav
       className='md:hidden fixed left-0 right-0 z-[600] bg-white/90 backdrop-blur-xl border-t border-gray-200/50 overflow-hidden dark:bg-gray-900/80 dark:border-gray-700/50'
@@ -176,7 +192,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
       }}
     >
       <ul className='flex items-center overflow-x-auto scrollbar-hide'>
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const active = isActive(item.href);
           return (
             <li
@@ -190,10 +206,11 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
                 className='flex flex-col items-center justify-center w-full h-14 gap-1 text-xs'
               >
                 <item.icon
-                  className={`h-6 w-6 ${active
-                    ? 'text-green-600 dark:text-green-400'
-                    : 'text-gray-500 dark:text-gray-400'
-                    }`}
+                  className={`h-6 w-6 ${
+                    active
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-gray-500 dark:text-gray-400'
+                  }`}
                 />
                 <span
                   className={
@@ -208,6 +225,12 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
             </li>
           );
         })}
+        <li
+          className='flex-shrink-0'
+          style={{ width: '20vw', minWidth: '20vw' }}
+        >
+          <NavigationCustomizer items={navItems} mobile />
+        </li>
       </ul>
     </nav>
   );
