@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback,useEffect, useRef } from 'react';
 
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
+import { useWatchTogether } from '@/hooks/useWatchTogether';
 
 import type { PlayState } from '@/types/watch-room';
 
@@ -33,14 +34,85 @@ export function usePlaySync({
 }: UsePlaySyncOptions) {
   const router = useRouter();
   const watchRoom = useWatchRoomContextSafe();
+  const watchTogether = useWatchTogether();
   const lastSyncTimeRef = useRef(0); // 上次同步时间
   const isHandlingRemoteCommandRef = useRef(false); // 标记是否正在处理远程命令
 
   // 检查是否在房间内
-  const isInRoom = !!(watchRoom && watchRoom.currentRoom);
+  const isInRoom = !!(watchRoom && watchRoom.currentRoom) || watchTogether.enabled;
   const isOwner = watchRoom?.isOwner || false;
   const currentRoom = watchRoom?.currentRoom;
   const socket = watchRoom?.socket;
+
+  const buildTogetherState = useCallback(() => {
+    const player = artPlayerRef.current;
+    return {
+      contentType: (currentEpisode ? 'tv' : 'movie') as 'movie' | 'tv',
+      contentId: videoId,
+      title: videoName,
+      route: typeof window === 'undefined' ? '' : `${window.location.pathname}${window.location.search}`,
+      source: currentSource,
+      episode: currentEpisode,
+      position: player?.currentTime || 0,
+      duration: player?.duration || 0,
+      paused: !(player?.playing || false),
+      playbackRate: player?.playbackRate || 1,
+      mediaUpdatedAt: Date.now(),
+    };
+  }, [artPlayerRef, currentEpisode, currentSource, videoId, videoName]);
+
+  useEffect(() => {
+    const remote = watchTogether.state;
+    const player = artPlayerRef.current;
+    if (!watchTogether.enabled || !remote || !playerReady) return;
+    if (remote.contentType === 'youtube') {
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/youtube/watch')) {
+        router.push(remote.route);
+      }
+      return;
+    }
+    if (remote.contentId !== videoId || remote.source !== currentSource || remote.episode !== currentEpisode) {
+      if (remote.route && typeof window !== 'undefined' && `${window.location.pathname}${window.location.search}` !== remote.route) {
+        router.push(remote.route);
+      }
+      return;
+    }
+    if (!player) return;
+    isHandlingRemoteCommandRef.current = true;
+    const expected = remote.paused
+      ? remote.position
+      : remote.position + Math.max(0, Date.now() - remote.mediaUpdatedAt) / 1000;
+    if (Math.abs((player.currentTime || 0) - expected) >= 2) player.currentTime = expected;
+    if (remote.paused && player.playing) player.pause();
+    if (!remote.paused && !player.playing) void player.play().catch(() => undefined);
+    if (remote.playbackRate && player.playbackRate !== remote.playbackRate) player.playbackRate = remote.playbackRate;
+    const timer = setTimeout(() => { isHandlingRemoteCommandRef.current = false; }, 600);
+    return () => clearTimeout(timer);
+  }, [watchTogether.enabled, watchTogether.state, playerReady, videoId, currentSource, currentEpisode, router, artPlayerRef]);
+
+  useEffect(() => {
+    if (!watchTogether.enabled || !playerReady) return;
+    const player = artPlayerRef.current;
+    if (!player) return;
+    const emit = (kind: 'state' | 'play' | 'pause' | 'seek' | 'content-change') => {
+      if (isHandlingRemoteCommandRef.current || !videoId) return;
+      watchTogether.send(kind, buildTogetherState());
+    };
+    const onPlay = () => emit('play');
+    const onPause = () => emit('pause');
+    const onSeek = () => emit('seek');
+    player.on('play', onPlay);
+    player.on('pause', onPause);
+    player.on('seeked', onSeek);
+    const interval = setInterval(() => player.playing && emit('state'), 5000);
+    emit('content-change');
+    return () => {
+      player.off('play', onPlay);
+      player.off('pause', onPause);
+      player.off('seeked', onSeek);
+      clearInterval(interval);
+    };
+  }, [watchTogether.enabled, watchTogether.send, playerReady, videoId, currentSource, currentEpisode, artPlayerRef, buildTogetherState]);
 
   // 广播播放状态给房间内所有人（任何成员都可以触发同步）
   const broadcastPlayState = useCallback(() => {
@@ -488,7 +560,7 @@ export function usePlaySync({
   return {
     isInRoom,
     isOwner,
-    shouldDisableControls: isInRoom && !isOwner, // 房员禁用某些控制
+    shouldDisableControls: !watchTogether.enabled && isInRoom && !isOwner,
     broadcastPlayState, // 导出供手动调用
   };
 }

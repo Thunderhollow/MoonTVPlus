@@ -1,4 +1,5 @@
 // 观影室相关类型定义
+import type { WatchTogetherAction, WatchTogetherPresence, WatchTogetherState } from './watch-together';
 
 export interface Room {
   id: string;
@@ -94,6 +95,8 @@ export interface RoomMemberInfo {
 
 // Socket.IO 事件类型
 export interface ServerToClientEvents {
+  'watch-together:state': (state: WatchTogetherState) => void;
+  'watch-together:presence': (presence: WatchTogetherPresence[]) => void;
   'room:created': (room: Room) => void;
   'room:joined': (data: { room: Room; members: Member[] }) => void;
   'room:left': () => void;
@@ -131,6 +134,8 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+  'watch-together:join': (callback: (response: { success: boolean; state?: WatchTogetherState | null; error?: string }) => void) => void;
+  'watch-together:action': (action: WatchTogetherAction, callback: (response: { success: boolean; state?: WatchTogetherState; error?: string }) => void) => void;
   'room:create': (data: {
     name: string;
     description: string;
@@ -193,6 +198,10 @@ export interface WatchRoomConfig {
   serverType: 'internal' | 'external';
   externalServerUrl?: string;
   externalServerAuth?: string; // 通过 /api/watch-room-auth 接口获取（需要登录）
+  watchTogetherEnabled?: boolean;
+  watchTogetherToken?: string;
+  watchTogetherUsers?: string[];
+  watchTogetherWebSocketUrl?: string;
 }
 
 // LocalStorage 存储的房间信息
