@@ -65,6 +65,9 @@ class WatchRoomSocketManager {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
+      auth: config.watchTogetherToken
+        ? { watchTogetherToken: config.watchTogetherToken }
+        : undefined,
     };
 
     if (config.serverType === 'internal') {
@@ -83,6 +86,7 @@ class WatchRoomSocketManager {
         ...socketOptions,
         auth: {
           token: config.externalServerAuth,
+          watchTogetherToken: config.watchTogetherToken,
         },
         extraHeaders: config.externalServerAuth
           ? {
@@ -169,6 +173,11 @@ class WatchRoomSocketManager {
 
   isConnected(): boolean {
     return this.socket?.connected ?? false;
+  }
+
+  updateWatchTogetherToken(token: string) {
+    if (!this.socket) return;
+    this.socket.auth = { ...(this.socket.auth || {}), watchTogetherToken: token };
   }
 
   private setupEventListeners() {
