@@ -237,10 +237,24 @@ export function WatchRoomProvider({ children }: WatchRoomProviderProps) {
           const data = await response.json();
           // API 返回格式: { SiteName, StorageType, Version, WatchRoom }
           const watchRoomConfig: WatchRoomConfig = {
-            enabled: data.WatchRoom?.enabled ?? false, // 默认不启用
+            enabled: data.WatchRoom?.enabled ?? false,
             serverType: data.WatchRoom?.serverType ?? 'internal',
             externalServerUrl: data.WatchRoom?.externalServerUrl,
+            watchTogetherEnabled: data.WatchTogether?.enabled ?? false,
+            watchTogetherWebSocketUrl: data.WatchTogether?.websocketUrl,
           };
+
+          if (watchRoomConfig.watchTogetherEnabled && isLoggedIn) {
+            const togetherResponse = await fetch('/api/watch-together/token');
+            if (togetherResponse.ok) {
+              const together = await togetherResponse.json();
+              watchRoomConfig.watchTogetherToken = together.token;
+              watchRoomConfig.watchTogetherUsers = together.users;
+            } else {
+              watchRoomConfig.watchTogetherEnabled = false;
+              watchRoomConfig.enabled = data.WatchRoom?.enabled ?? false;
+            }
+          }
 
           // 如果使用外部服务器，需要获取认证信息（需要登录）
           if (watchRoomConfig.serverType === 'external' && watchRoomConfig.enabled) {
@@ -268,7 +282,7 @@ export function WatchRoomProvider({ children }: WatchRoomProviderProps) {
           }
 
           setConfig(watchRoomConfig);
-          setIsEnabled(watchRoomConfig.enabled);
+          setIsEnabled(data.WatchRoom?.enabled ?? false);
 
           // 只在启用了观影室时才连接
           if (watchRoomConfig.enabled) {
@@ -321,6 +335,20 @@ export function WatchRoomProvider({ children }: WatchRoomProviderProps) {
       watchRoom.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    if (!config?.watchTogetherEnabled || !isLoggedIn) return;
+    const refresh = async () => {
+      const response = await fetch('/api/watch-together/token');
+      if (!response.ok) return;
+      const data = await response.json();
+      const { watchRoomSocketManager } = await import('@/lib/watch-room-socket');
+      watchRoomSocketManager.updateWatchTogetherToken(data.token);
+      setConfig((current) => current ? { ...current, watchTogetherToken: data.token, watchTogetherUsers: data.users } : current);
+    };
+    const interval = window.setInterval(() => void refresh(), 45 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [config?.watchTogetherEnabled, isLoggedIn]);
 
   const contextValue: WatchRoomContextType = {
     socket: watchRoom.socket,
