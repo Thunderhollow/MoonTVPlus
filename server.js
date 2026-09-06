@@ -3,6 +3,7 @@ const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
 const { Server } = require('socket.io');
+const crypto = require('crypto');
 const {
   attachTVRemoteIO,
   cleanupTVRemoteDevices,
@@ -69,6 +70,9 @@ class WatchRoomServer {
     this.helperToRoom = new Map();
     this.roomDeletionTimers = new Map(); // 房间延迟删除定时器
     this.cleanupInterval = null;
+    this.watchTogetherState = null;
+    this.watchTogetherMembers = new Map();
+    this.watchTogetherRevision = 0;
     this.setupEventHandlers();
     this.startCleanupTimer();
   }
@@ -76,6 +80,38 @@ class WatchRoomServer {
   setupEventHandlers() {
     this.io.on('connection', (socket) => {
       console.log(`[WatchRoom] Client connected: ${socket.id}`);
+
+      const watchTogetherIdentity = this.verifyWatchTogetherToken(
+        socket.handshake.auth?.watchTogetherToken
+      );
+
+      socket.on('watch-together:join', (callback) => {
+        if (!watchTogetherIdentity) return callback({ success: false, error: 'Unauthorized' });
+        this.watchTogetherMembers.set(socket.id, { username: watchTogetherIdentity.username, lastSeen: Date.now() });
+        socket.join('watch-together:default');
+        this.broadcastWatchTogetherPresence();
+        callback({ success: true, state: this.watchTogetherState });
+      });
+
+      socket.on('watch-together:action', (action, callback) => {
+        if (!watchTogetherIdentity || !this.watchTogetherMembers.has(socket.id)) {
+          return callback({ success: false, error: 'Unauthorized' });
+        }
+        if (!action?.actionId || !action.state?.contentId || !action.state?.route?.startsWith('/')) {
+          return callback({ success: false, error: 'Invalid action' });
+        }
+        const state = {
+          ...action.state,
+          sessionId: 'default',
+          revision: (this.watchTogetherRevision = Math.max(this.watchTogetherRevision, Number(action.baseRevision) || 0) + 1),
+          actionId: action.actionId,
+          actorUsername: watchTogetherIdentity.username,
+          serverUpdatedAt: Date.now(),
+        };
+        this.watchTogetherState = state;
+        this.io.to('watch-together:default').emit('watch-together:state', state);
+        callback({ success: true, state });
+      });
 
       // 创建房间
       socket.on('room:create', (data, callback) => {
@@ -544,6 +580,8 @@ class WatchRoomServer {
 
       // 心跳
       socket.on('heartbeat', () => {
+        const togetherMember = this.watchTogetherMembers.get(socket.id);
+        if (togetherMember) togetherMember.lastSeen = Date.now();
         const roomInfo = this.socketToRoom.get(socket.id);
 
         // 如果用户在房间中，更新心跳时间
@@ -585,8 +623,36 @@ class WatchRoomServer {
           }
         }
         this.handleLeaveRoom(socket);
+        if (this.watchTogetherMembers.delete(socket.id)) this.broadcastWatchTogetherPresence();
       });
     });
+  }
+
+  verifyWatchTogetherToken(token) {
+    const secret = process.env.WATCH_TOGETHER_TOKEN_SECRET;
+    const allowed = (process.env.WATCH_TOGETHER_USERS || '').split(',').map((v) => v.trim()).filter(Boolean).slice(0, 2);
+    if (process.env.WATCH_TOGETHER_ENABLED !== 'true' || !secret || !token) return null;
+    const [payload, signature] = String(token).split('.');
+    if (!payload || !signature) return null;
+    try {
+      const expected = crypto.createHmac('sha256', secret).update(payload).digest();
+      const supplied = Buffer.from(signature, 'base64url');
+      if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) return null;
+      const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+      if (!allowed.includes(decoded.username) || decoded.exp <= Math.floor(Date.now() / 1000)) return null;
+      return decoded;
+    } catch {
+      return null;
+    }
+  }
+
+  broadcastWatchTogetherPresence() {
+    const counts = new Map();
+    for (const member of this.watchTogetherMembers.values()) {
+      counts.set(member.username, (counts.get(member.username) || 0) + 1);
+    }
+    const presence = Array.from(counts, ([username, connections]) => ({ username, connections, online: true }));
+    this.io.to('watch-together:default').emit('watch-together:presence', presence);
   }
 
   handleLeaveRoom(socket) {
@@ -828,7 +894,8 @@ app.prepare().then(async () => {
 
   const tvModeEnabled = isTVModeEnabled();
   const shouldStartInternalWatchRoom =
-    watchRoomConfig.enabled && watchRoomConfig.serverType === 'internal';
+    (watchRoomConfig.enabled || process.env.WATCH_TOGETHER_ENABLED === 'true') &&
+    watchRoomConfig.serverType === 'internal';
 
   if (tvModeEnabled || shouldStartInternalWatchRoom) {
     io = new Server(httpServer, {
@@ -852,7 +919,7 @@ app.prepare().then(async () => {
     watchRoomServer = new WatchRoomServer(io);
     console.log('[WatchRoom] Socket.IO server initialized');
   } else {
-    if (!watchRoomConfig.enabled) {
+    if (!watchRoomConfig.enabled && process.env.WATCH_TOGETHER_ENABLED !== 'true') {
       console.log('[WatchRoom] Watch room is disabled');
     } else if (watchRoomConfig.serverType === 'external') {
       console.log('[WatchRoom] Using external watch room server');

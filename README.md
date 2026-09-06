@@ -496,6 +496,10 @@ dockge/komodo 等 docker compose UI 也有自动更新功能
 | WATCH_ROOM_SERVER_TYPE                   | 观影室服务器类型                                             | internal/external           | internal                                                     |
 | WATCH_ROOM_EXTERNAL_SERVER_URL           | 外部观影室服务器地址（当 SERVER_TYPE 为 external 时必填）    | WebSocket URL               | (空)                                                         |
 | WATCH_ROOM_EXTERNAL_SERVER_AUTH          | 外部观影室服务器认证令牌（当 SERVER_TYPE 为 external 时必填） | 任意字符串                  | (空)                                                         |
+| WATCH_TOGETHER_ENABLED                   | 启用双人永久同步观影会话                                   | true/false                  | false                                                        |
+| WATCH_TOGETHER_USERS                     | 允许使用永久同步会话的两个 MoonTV 用户名                   | 逗号分隔的两个用户名        | (空)                                                         |
+| WATCH_TOGETHER_TOKEN_SECRET              | 签发短期同步连接令牌的服务端密钥                           | 长随机字符串                | (空)                                                         |
+| WATCH_TOGETHER_WS_URL                    | Cloudflare Durable Object Worker 的基础 URL                 | https://worker.example.com  | (空)                                                         |
 | NEXT_PUBLIC_VOICE_CHAT_STRATEGY          | 观影室语音聊天策略                                           | webrtc-fallback/server-only | webrtc-fallback                                              |
 | NEXT_PUBLIC_ENABLE_OFFLINE_DOWNLOAD      | 是否启用服务器离线下载功能（开启后也仅管理员和站长可用）     | true/false                  | false                                                        |
 | OFFLINE_DOWNLOAD_DIR                     | 离线下载文件存储目录                                         | 任意有效路径                | /data                                                        |
