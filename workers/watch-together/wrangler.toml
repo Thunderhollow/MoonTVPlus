@@ -1,0 +1,14 @@
+name = "moontv-watch-together"
+main = "index.js"
+compatibility_date = "2026-09-06"
+
+[[durable_objects.bindings]]
+name = "WATCH_TOGETHER_SESSION"
+class_name = "WatchTogetherSession"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WatchTogetherSession"]
+
+[vars]
+WATCH_TOGETHER_ENABLED = "true"
